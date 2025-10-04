@@ -1,0 +1,47 @@
+# Compilación
+/build/
+*.o
+*.a
+*.so
+*.out
+*.exe
+mp-mesi
+
+# Archivos de depuración
+*.dSYM/
+*.stackdump
+*.core
+core.*
+vgcore.*
+
+# Archivos de logs y ejecución
+*.log
+*.trace
+*.tmp
+*.bak
+
+# Archivos generados por el Makefile
+*.d
+*.depend
+
+# Archivos intermedios del compilador
+*.ii
+*.s
+*.su
+
+# Configuración del editor y entorno
+.vscode/
+.idea/
+*.swp
+*.swo
+*.user
+*.workspace
+*.cbp
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de proyecto locales
+*.old
+*.orig
