@@ -20,12 +20,19 @@ inline constexpr std::size_t kWordBytes     = 8;
 // Parámetros de simulación
 inline constexpr bool kCycleDriven          = true;
 
-// ====== Flags de LOG (actívalos/desactívalos según necesites) ======
+// ====== Flags de LOG ======
 inline constexpr bool kLogSim    = true;   // logs del simulador/ciclos
 inline constexpr bool kLogPE     = true;   // logs de cada PE (accesos)
 inline constexpr bool kLogCache  = true;   // logs de caché (hits/misses/wb)
 inline constexpr bool kLogSnoop  = true;   // logs de snoops/invalidaciones
 inline constexpr bool kLogBus    = true;   // logs del bus (cola/broadcast)
+
+// ====== Control de demo Semana 4 ======
+inline constexpr bool kDemoContention = true;   // pruebas de coherencia real
+
+// ====== PROCESAMIENTO DEL BUS POR CICLO ======
+// Ponemos 1 para que el orden sea: ciclo1 (Upgr de PE0) y ciclo2 (BusRd de PE1) -> Flush seguro.
+inline constexpr std::size_t kBusOpsPerCycle = 1; // (antes: 2)
 
 // Macro simple de logging condicional
 #define LOG_IF(flag, msg) do { if (flag) { std::cerr << msg << std::endl; } } while (0)
