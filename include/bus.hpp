@@ -15,19 +15,17 @@ class Bus {
 public:
   explicit Bus(std::vector<Cache*>& caches);
 
-  // Permite actualizar las cachés registradas sin reconstruir el Bus
-  void set_caches(const std::vector<Cache*>& caches) { caches_ = caches; }
+  // Conectar (o reconectar) cachés luego de construir el bus
+  void set_caches(const std::vector<Cache*>& caches);
 
-  // PEs/Cachés publican peticiones aquí
+  // Cola del bus
   void push_request(const BusRequest& req);
-
-  // Avance por ciclo: procesa hasta K transacciones pendientes
   void step();
 
-  // Métricas del bus
-  std::uint64_t bytes() const { return bus_bytes_; }
-  std::uint64_t count_cmd(BusCmd c) const { return cmd_counts_[static_cast<std::size_t>(c)]; }
-  std::uint64_t flushes() const { return flushes_; }
+  // Métricas
+  std::uint64_t bytes() const;
+  std::uint64_t count_cmd(BusCmd cmd) const;
+  std::uint64_t flushes() const;
 
 private:
   std::vector<Cache*> caches_;

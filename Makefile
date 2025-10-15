@@ -9,7 +9,7 @@ OBJ_DIR  := build
 SRCS := $(wildcard $(SRC_DIR)/*.cpp) main.cpp
 OBJS := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 
-.PHONY: all run clean debug
+.PHONY: all run clean debug runasm
 
 all: $(APP)
 
@@ -20,8 +20,13 @@ $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	@$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
+# Al ejecutar 'make run', si no se define ARGS, se usa examples/demo.asm por defecto
 run: all
-	@./$(APP)
+	@./$(APP) $(if $(ARGS),$(ARGS),examples/demo.asm)
+
+# Alias explícito por si se prefiere un target dedicado
+runasm: all
+	@./$(APP) examples/demo.asm
 
 debug: CXXFLAGS += -g -O0
 debug: clean all
