@@ -20,6 +20,11 @@ static const char* cmd_str(BusCmd c) {
 
 Bus::Bus(std::vector<Cache*>& caches) : caches_(caches) {}
 
+void Bus::set_caches(const std::vector<Cache*>& caches) {
+  std::scoped_lock lk(mtx_);
+  caches_ = caches;
+}
+
 void Bus::push_request(const BusRequest& req) {
   {
     std::scoped_lock lk(mtx_);
@@ -39,29 +44,27 @@ void Bus::broadcast(const BusRequest& req) {
   // Contar comando
   cmd_counts_[static_cast<std::size_t>(req.cmd)]++;
 
-  std::optional<Word> data;
+  // Recorremos cachés (snoop). Si alguna devuelve datos (Flush), lo registramos.
+  std::optional<Word> data_from_peer;
   for (auto* c : caches_) {
     if (!c) continue;
     if (c->owner() == req.source) continue; // evitar self-snoop
 
-    std::optional<Word> local_data;
-    bool acted = c->snoop(req, local_data);
-    if (acted) {
-      LOG_IF(cfg::kLogBus, "  -> cache de PE" << c->owner() << " reaccionó"
-            << (local_data.has_value() ? " (Flush)" : ""));
-      if (local_data.has_value() && !data.has_value()) {
-        data = local_data; // primera fuente de datos
-      }
+    std::optional<Word> local;
+    bool acted = c->snoop(req, local);
+    if (acted && local.has_value()) {
+      data_from_peer = local; // hubo intervención (Flush)
     }
   }
 
-  if (data.has_value()) {
-    // Hubo intervención con datos (Flush)
-    bus_bytes_ += cfg::kLineBytes;
+  // Contabilización de tráfico en el bus:
+  if (data_from_peer.has_value()) {
+    bus_bytes_ += cfg::kLineBytes; // asumimos transferencia de una línea completa
     flushes_++;
   } else {
-    bus_bytes_ += req.size;
+    bus_bytes_ += req.size;        // tamaño reportado por la petición
   }
+
   LOG_IF(cfg::kLogBus, "[BUS] bytes acumulados=" << bus_bytes_
         << " | flushes=" << flushes_);
 }
@@ -85,6 +88,18 @@ void Bus::step() {
     broadcast(req);
     processed++;
   }
+}
+
+std::uint64_t Bus::bytes() const {
+  return bus_bytes_;
+}
+
+std::uint64_t Bus::count_cmd(BusCmd cmd) const {
+  return cmd_counts_[static_cast<std::size_t>(cmd)];
+}
+
+std::uint64_t Bus::flushes() const {
+  return flushes_;
 }
 
 } // namespace sim
