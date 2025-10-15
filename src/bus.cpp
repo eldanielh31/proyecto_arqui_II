@@ -36,6 +36,9 @@ void Bus::broadcast(const BusRequest& req) {
         << " addr=0x" << std::hex << req.addr << std::dec
         << " src=PE" << req.source);
 
+  // Contar comando
+  cmd_counts_[static_cast<std::size_t>(req.cmd)]++;
+
   std::optional<Word> data;
   for (auto* c : caches_) {
     if (!c) continue;
@@ -51,24 +54,37 @@ void Bus::broadcast(const BusRequest& req) {
       }
     }
   }
-  bus_bytes_ += (data.has_value() ? cfg::kLineBytes : req.size);
-  LOG_IF(cfg::kLogBus, "[BUS] bytes acumulados=" << bus_bytes_);
+
+  if (data.has_value()) {
+    // Hubo intervención con datos (Flush)
+    bus_bytes_ += cfg::kLineBytes;
+    flushes_++;
+  } else {
+    bus_bytes_ += req.size;
+  }
+  LOG_IF(cfg::kLogBus, "[BUS] bytes acumulados=" << bus_bytes_
+        << " | flushes=" << flushes_);
 }
 
 void Bus::step() {
-  BusRequest req;
-  {
-    std::scoped_lock lk(mtx_);
-    if (q_.empty()) {
-      LOG_IF(cfg::kLogBus, "[BUS] step: cola vacía");
-      return;
+  std::size_t processed = 0;
+  while (processed < cfg::kBusOpsPerCycle) {
+    BusRequest req;
+    {
+      std::scoped_lock lk(mtx_);
+      if (q_.empty()) {
+        if (processed == 0)
+          LOG_IF(cfg::kLogBus, "[BUS] step: cola vacía");
+        break;
+      }
+      req = q_.front(); q_.pop();
     }
-    req = q_.front(); q_.pop();
+    LOG_IF(cfg::kLogBus, "[BUS] step: procesando cmd=" << cmd_str(req.cmd)
+          << " addr=0x" << std::hex << req.addr << std::dec
+          << " src=PE" << req.source);
+    broadcast(req);
+    processed++;
   }
-  LOG_IF(cfg::kLogBus, "[BUS] step: procesando cmd=" << cmd_str(req.cmd)
-        << " addr=0x" << std::hex << req.addr << std::dec
-        << " src=PE" << req.source);
-  broadcast(req);
 }
 
 } // namespace sim
