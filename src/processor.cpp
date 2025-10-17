@@ -136,9 +136,30 @@ namespace sim
       next();
       break;
     }
+
+    case OpCode::REDUCE:
+    {
+      // REDUCE Rd, Ra, Rb  (sumatoria de memoria: sum_{i=0..count-1} [base + i*8])
+      std::uint64_t base = reg_[ins.ra];
+      std::uint64_t count = reg_[ins.rb];
+      double sum = 0.0;
+      for (std::uint64_t i = 0; i < count; ++i)
+      {
+        Word v = mem_load64(base + i * cfg::kWordBytes);
+        sum += as_double(v);
+      }
+      reg_[ins.rd] = from_double(sum);
+      LOG_IF(cfg::kLogPE, "[PE" << id_ << "] REDUCE R" << ins.rd
+                                << " base=0x" << std::hex << base << std::dec
+                                << " count=" << count
+                                << " -> " << std::fixed << std::setprecision(6) << sum);
+      next();
+      break;
+    }
+
     case OpCode::INC:
     {
-      reg_[ins.rd] += cfg::kWordBytes; // <<< AHORA avanza 8 bytes
+      reg_[ins.rd] += cfg::kWordBytes; // mover puntero 8 bytes
       LOG_IF(cfg::kLogPE, "[PE" << id_ << "] INC R" << ins.rd << " (+" << cfg::kWordBytes << ")");
       next();
       break;
@@ -163,33 +184,36 @@ namespace sim
       const auto &L = labels_map();
       auto it = L.find(ins.label);
       if (it == L.end())
-        throw std::runtime_error("Label no encontrada en JNZ: " + ins.label);
+        throw std::runtime_error("Label no encontrado: " + ins.label);
       if (reg_[0] != 0)
       {
-        LOG_IF(cfg::kLogPE, "[PE" << id_ << "] JNZ " << ins.label << " (salta)");
         pc_ = static_cast<std::size_t>(it->second);
       }
       else
       {
-        LOG_IF(cfg::kLogPE, "[PE" << id_ << "] JNZ " << ins.label << " (no salta)");
         next();
       }
       break;
     }
-    default:
-      next();
-      break;
     }
+
   }
 
   void Processor::step()
   {
-    if (mode_ == ExecMode::Trace)
+    if (mode_ == ExecMode::ISA)
     {
-      // (Modo traza: implementar si se requiere)
-      return;
+      exec_one();
     }
-    exec_one();
+    else
+    {
+      // modo trace - si aplica
+      if (pc_trace_ < trace_.size())
+      {
+        // ejecutar acceso...
+        pc_trace_++;
+      }
+    }
   }
 
   bool Processor::is_done() const

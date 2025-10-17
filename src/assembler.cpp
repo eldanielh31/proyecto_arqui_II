@@ -4,6 +4,7 @@
 #include <cctype>
 #include <unordered_map>
 #include <fstream>
+#include <algorithm>
 
 namespace sim
 {
@@ -14,6 +15,7 @@ namespace sim
     return L;
   }
 
+  // Quita comentarios ; o #
   static std::string strip_comment(const std::string &line)
   {
     auto pos = line.find_first_of(";#");
@@ -22,38 +24,98 @@ namespace sim
     return line.substr(0, pos);
   }
 
+  // ===== Implementaciones de helpers privados de Assembler (definidos en el .hpp) =====
   std::string Assembler::trim(const std::string &s)
   {
-    size_t i = 0, j = s.size();
-    while (i < j && std::isspace(static_cast<unsigned char>(s[i])))
-      ++i;
-    while (j > i && std::isspace(static_cast<unsigned char>(s[j - 1])))
-      --j;
+    std::size_t i = 0, j = s.size();
+    while (i < j && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+    while (j > i && std::isspace(static_cast<unsigned char>(s[j - 1]))) --j;
     return s.substr(i, j - i);
   }
 
   bool Assembler::starts_with(const std::string &s, const std::string &p)
   {
-    return s.size() >= p.size() && std::equal(p.begin(), p.end(), s.begin(),
-                                              [](char a, char b)
-                                              { return std::toupper(a) == std::toupper(b); });
+    if (s.size() < p.size()) return false;
+    // Comparación case-insensitive
+    for (std::size_t i = 0; i < p.size(); ++i)
+    {
+      if (std::toupper(static_cast<unsigned char>(s[i])) !=
+          std::toupper(static_cast<unsigned char>(p[i])))
+        return false;
+    }
+    return true;
   }
 
+  // Acepta "REG0..REG7" y también "[REGx]"
   int Assembler::parse_reg(const std::string &token)
   {
+    std::string t = token;
+    // Descorchetar si viene como "[REGx]"
+    if (!t.empty() && t.front() == '[' && t.back() == ']')
+      t = t.substr(1, t.size() - 2);
+
     // Espera "REG0".."REG7"
-    if (token.size() < 4 || !(token[0] == 'R' || token[0] == 'r') ||
-        !(token[1] == 'E' || token[1] == 'e') ||
-        !(token[2] == 'G' || token[2] == 'g'))
-    {
+    if (t.size() < 4 ||
+        !(t[0] == 'R' || t[0] == 'r') ||
+        !(t[1] == 'E' || t[1] == 'e') ||
+        !(t[2] == 'G' || t[2] == 'g'))
       throw std::runtime_error("Registro inválido: " + token);
-    }
-    int idx = std::stoi(token.substr(3));
+
+    int idx = std::stoi(t.substr(3));
     if (idx < 0 || idx > 7)
-      throw std::runtime_error("Registro fuera de rango: " + token);
+      throw std::runtime_error("Índice de registro fuera de rango (REG0..REG7): " + token);
     return idx;
   }
 
+  // ===== Utilidades locales (no tocan miembros privados) =====
+
+  // Divide en tokens por espacios o comas, mantiene "[REGx]" como un solo token
+  static std::vector<std::string> split_tokens(const std::string &line)
+  {
+    std::vector<std::string> t;
+    std::string cur;
+    auto flush = [&]{
+      if (!cur.empty())
+      {
+        // Quitar comas residuales al final del token
+        while (!cur.empty() && cur.back() == ',') cur.pop_back();
+        if (!cur.empty()) t.push_back(cur);
+        cur.clear();
+      }
+    };
+
+    bool in_brackets = false;
+    for (char c : line)
+    {
+      if (c == '[') { in_brackets = true; cur.push_back(c); continue; }
+      if (c == ']') { in_brackets = false; cur.push_back(c); continue; }
+
+      if (!in_brackets && (std::isspace(static_cast<unsigned char>(c)) || c == ','))
+      {
+        flush();
+      }
+      else
+      {
+        cur.push_back(c);
+      }
+    }
+    flush();
+    return t;
+  }
+
+  // Normaliza línea sin usar métodos privados de la clase
+  static std::string normalize_line(const std::string &line)
+  {
+    // trim simple (local)
+    std::size_t i = 0, j = line.size();
+    while (i < j && std::isspace(static_cast<unsigned char>(line[i]))) ++i;
+    while (j > i && std::isspace(static_cast<unsigned char>(line[j - 1]))) --j;
+    return line.substr(i, j - i);
+  }
+
+  // ====== Ensamblado ======
+
+  // Ensambla desde string
   Program Assembler::assemble_from_string(const std::string &src)
   {
     // 1) Normalizar líneas, quitar comentarios y espacios
@@ -64,13 +126,13 @@ namespace sim
       std::string line;
       while (std::getline(is, line))
       {
-        auto s = trim(strip_comment(line));
+        auto s = trim(strip_comment(line));  // aquí sí podemos usar trim() (miembro privado) por estar en un método de la clase
         if (!s.empty())
           lines.push_back(s);
       }
     }
 
-    // 2) Primera pasada: resolver labels y construir lista de "código" sin labels
+    // 2) Pasada 1: recolectar labels y construir lista de "código" sin labels
     std::unordered_map<std::string, int> label_to_pc;
     std::vector<std::string> code_only;
     code_only.reserve(lines.size());
@@ -89,50 +151,30 @@ namespace sim
       else
       {
         code_only.push_back(l);
-        pc++;
+        ++pc;
       }
     }
+    labels_storage() = label_to_pc;
 
-    // 3) Segunda pasada: parsear instrucciones
+    // 3) Pasada 2: parsear instrucciones
     Program p;
     p.code.reserve(code_only.size());
-    for (auto &l : code_only)
+
+    for (std::size_t i = 0; i < code_only.size(); ++i)
     {
-      // Tokenizar por comas/espacios/corchetes
-      std::vector<std::string> tok;
-      tok.reserve(8);
-      std::string cur;
-      auto flush_cur = [&]()
-      {
-        if (!cur.empty())
-        {
-          tok.push_back(trim(cur));
-          cur.clear();
-        }
-      };
-      for (char c : l)
-      {
-        if (c == '[' || c == ']' || c == ',' || std::isspace(static_cast<unsigned char>(c)))
-        {
-          flush_cur();
-        }
-        else
-        {
-          cur.push_back(c);
-        }
-      }
-      flush_cur();
-      if (tok.empty())
-        continue;
+      auto line = normalize_line(code_only[i]);
+      auto tok  = split_tokens(line);
+      if (tok.empty()) continue;
 
       Instr ins{};
+
       if (starts_with(tok[0], "LOAD"))
       {
         if (tok.size() != 3)
           throw std::runtime_error("Sintaxis LOAD: LOAD Rd, [Rs]");
         ins.op = OpCode::LOAD;
         ins.rd = parse_reg(tok[1]);
-        ins.ra = parse_reg(tok[2]);
+        ins.ra = parse_reg(tok[2]); // acepta [REGx] por parse_reg
       }
       else if (starts_with(tok[0], "STORE"))
       {
@@ -140,7 +182,7 @@ namespace sim
           throw std::runtime_error("Sintaxis STORE: STORE Rs, [Rd]");
         ins.op = OpCode::STORE;
         ins.ra = parse_reg(tok[1]);
-        ins.rd = parse_reg(tok[2]);
+        ins.rd = parse_reg(tok[2]); // acepta [REGx]
       }
       else if (starts_with(tok[0], "FMUL"))
       {
@@ -160,6 +202,15 @@ namespace sim
         ins.ra = parse_reg(tok[2]);
         ins.rb = parse_reg(tok[3]);
       }
+      else if (starts_with(tok[0], "REDUCE"))
+      {
+        if (tok.size() != 4)
+          throw std::runtime_error("Sintaxis REDUCE: REDUCE Rd, Ra, Rb  (Ra=base, Rb=count)");
+        ins.op = OpCode::REDUCE;
+        ins.rd = parse_reg(tok[1]);
+        ins.ra = parse_reg(tok[2]); // base
+        ins.rb = parse_reg(tok[3]); // count
+      }
       else if (starts_with(tok[0], "INC"))
       {
         if (tok.size() != 2)
@@ -177,22 +228,18 @@ namespace sim
       else if (starts_with(tok[0], "MOVI"))
       {
         if (tok.size() != 3)
-          throw std::runtime_error("Sintaxis MOVI: MOVI Reg, Inm");
+          throw std::runtime_error("Sintaxis MOVI: MOVI Rd, Imm64");
         ins.op = OpCode::MOVI;
         ins.rd = parse_reg(tok[1]);
-        // inmediato: decimal o 0xHEX
+        // Inmediato decimal o hex "0x..."
         std::string imm = tok[2];
         unsigned long long val = 0;
         try
         {
           if (imm.size() > 2 && (imm[0] == '0') && (imm[1] == 'x' || imm[1] == 'X'))
-          {
             val = std::stoull(imm, nullptr, 16);
-          }
           else
-          {
             val = std::stoull(imm, nullptr, 10);
-          }
         }
         catch (...)
         {
@@ -216,11 +263,10 @@ namespace sim
       p.code.push_back(ins);
     }
 
-    // 4) Guardar el mapa de labels en el singleton compartido
-    labels_storage() = std::move(label_to_pc);
     return p;
   }
 
+  // Ensambla desde archivo
   Program Assembler::assemble_from_file(const std::string &path)
   {
     std::ifstream in(path);

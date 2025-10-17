@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <utility>
+#include <cstdint>
 
 namespace sim {
 
@@ -52,14 +53,17 @@ private:
 
   // Helpers de mapeo
   std::pair<std::size_t, std::uint64_t> index_tag(Addr addr) const;
+  static inline Addr line_base(Addr addr) { return (addr / cfg::kLineBytes) * cfg::kLineBytes; }
+  static inline std::size_t line_offset(Addr addr) { return static_cast<std::size_t>(addr % cfg::kLineBytes); }
+
   int  find_way(std::size_t set_idx, std::uint64_t tag) const;
   int  select_victim(std::size_t set_idx) const; // FIFO simple
 
-  // Operaciones internas
-  bool read_hit(std::size_t set_idx, int way, Word& out);
-  bool write_hit(std::size_t set_idx, int way, Addr addr, Word value); // usa addr real
+  // Operaciones internas (ahora con addr/size para respetar offset)
+  bool read_hit(std::size_t set_idx, int way, Addr addr, std::size_t size, Word& out);
+  bool write_hit(std::size_t set_idx, int way, Addr addr, std::size_t size, Word value);
 
-  // Miss handling (write-allocate + write-back)
+  // Miss handling (ahora: write-allocate + write-through + línea limpia)
   bool handle_load_miss(Addr addr, std::size_t size, Word& out);
   bool handle_store_miss(Addr addr, std::size_t size, Word value);
 };

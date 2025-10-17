@@ -10,6 +10,7 @@ enum class OpCode {
   STORE,  // STORE Rs, [Rd]
   FMUL,   // FMUL Rd, Ra, Rb
   FADD,   // FADD Rd, Ra, Rb
+  REDUCE, // REDUCE Rd, Ra, Rb  (Ra=base, Rb=count)  ← agregado
   INC,    // INC R
   DEC,    // DEC R
   MOVI,   // MOVI Rd, IMM64
@@ -20,7 +21,7 @@ struct Instr {
   OpCode op{};
   int rd = 0;           // destino (o registro de dirección en STORE)
   int ra = 0;           // operando A (o src en LOAD/STORE)
-  int rb = 0;           // operando B (FMUL/FADD)
+  int rb = 0;           // operando B (FMUL/FADD/REDUCE)
   std::string label;    // para JNZ
   std::uint64_t imm=0;  // para MOVI
 };
