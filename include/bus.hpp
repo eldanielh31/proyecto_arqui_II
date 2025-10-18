@@ -6,6 +6,7 @@
 #include <optional>
 #include <cstdint>
 #include <array>
+#include <string>
 
 namespace sim {
 
@@ -32,9 +33,13 @@ private:
   std::queue<BusRequest> q_;
   std::mutex mtx_;
 
+  // Estado para logs
+  bool bus_was_empty_{true};
+  std::uint64_t next_tid_{1};
+
   // Métricas
   std::uint64_t bus_bytes_{0};
-  std::array<std::uint64_t, 6> cmd_counts_{}; // por cada BusCmd (0..5)
+  std::array<std::uint64_t, 5> cmd_counts_{}; // por cada BusCmd (0..4)
   std::uint64_t flushes_{0};                  // número de veces que hubo intervención con datos
 
   void broadcast(const BusRequest& req);

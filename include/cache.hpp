@@ -63,7 +63,7 @@ private:
   bool read_hit(std::size_t set_idx, int way, Addr addr, std::size_t size, Word& out);
   bool write_hit(std::size_t set_idx, int way, Addr addr, std::size_t size, Word value);
 
-  // Miss handling (ahora: write-allocate + write-through + línea limpia)
+  // Miss handling
   bool handle_load_miss(Addr addr, std::size_t size, Word& out);
   bool handle_store_miss(Addr addr, std::size_t size, Word value);
 };

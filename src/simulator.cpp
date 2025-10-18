@@ -145,7 +145,7 @@ namespace sim
                           << " basePS=0x" << basePS << std::dec
                           << " seg=" << gSeg << " (INC avanza " << cfg::kWordBytes << "B)");
 
-    // Dump de memoria inicial
+    // Dump de memoria inicial (completo como ya lo tenías)
     std::cout << "\n========== CONTENIDO DE MEMORIA (inicial) ==========\n";
     for (std::size_t addr = 0; addr < cfg::kMemWords * cfg::kWordBytes; addr += 8)
     {
@@ -256,7 +256,7 @@ namespace sim
     {
       std::cout << "---- PE" << pe << " -------------------------------------------------\n";
 
-      // REGISTROS
+      // REGISTROS:
       std::cout << "REGISTROS:\n";
       for (int r = 0; r < 8; ++r)
       {
@@ -371,8 +371,7 @@ namespace sim
                 << std::fixed << std::setprecision(6) << final << "\n";
     }
 
-    // Reutilizamos el mismo bloque de dumps post-mortem que en run_cycles:
-    // NOTA: para no duplicar código, si lo prefieres, puedes factorizarlo a un helper local.
+    // Reutilizamos el mismo bloque de dumps post-mortem que en run_cycles
     std::cout << "\n================= DEBUG POR PE (REGISTROS + MEMORIA) =================\n";
     std::cout << std::fixed << std::setprecision(6);
 
