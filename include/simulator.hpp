@@ -1,14 +1,10 @@
 #pragma once
-/**
- * Simulator: orquesta Bus, Memoria, Caches y PEs.
- *
- * Multihilo (1 hilo por PE + 1 hilo para el BUS) y stepping.
- * Corrección de congelamiento: cada hilo procesa exactamente 1 "tick"
- * y espera explícitamente a que cambie tick_ antes de poder volver a
- * trabajar, evitando carreras/despertares espurios que dejaban al
- * orquestador esperando contadores que nunca llegaban.
- */
-
+//
+// Simulator: orquesta Bus, Memoria, Caches y PEs.
+// Multihilo: 1 hilo por PE + 1 para el Bus.
+// Avanza por "ticks": primero corren los PEs, luego el Bus.
+// Usa una barrera por tick para que nadie se adelante y evitar deadlocks.
+//
 #include <array>
 #include <memory>
 #include <optional>
@@ -32,21 +28,21 @@ struct Program;
 class Simulator {
 public:
   Simulator();
-  ~Simulator();  // Def en .cpp (evita incomplete-type con unique_ptr)
+  ~Simulator();  // Definido en .cpp (para evitar incomplete-type con unique_ptr)
 
-  // ---- Inicialización / carga de programas
-  void init_dot_problem(std::size_t N, Addr baseA, Addr baseB, Addr basePS);
-  void load_demo_traces();
-  void load_program_all(const Program &p);
+  // ---- Setup / carga de programas
+  void init_dot_problem(std::size_t N, Addr baseA, Addr baseB, Addr basePS); // prepara A·B y PS
+  void load_demo_traces();                         // traza de demo
+  void load_program_all(const Program &p);         // mismo prog para todos los PEs
   void load_program_all_from_file(const std::string &path);
 
   // ---- Ejecución
-  void run_cycles(std::size_t cycles);
-  void run_until_done(std::size_t safety_max = 100000);
+  void run_cycles(std::size_t cycles);             // corre N ticks
+  void run_until_done(std::size_t safety_max = 100000); // hasta que todos terminen
 
   // ---- Stepping interactivo
   void run_stepping();  // ENTER=step | c=continuar | r=regs | b=bus | q=salir
-  void step_one();      // 1 tick (PEs + Bus) con diffs y dumps
+  void step_one();      // 1 tick (PEs + Bus) con diffs/dumps
   bool all_done() const;
 
   // ---- Utilidades
@@ -70,27 +66,27 @@ private:
   // Estado compartido
   mutable std::mutex m_;
   std::condition_variable cv_;
-  Phase      phase_      = Phase::Idle;
+  Phase      phase_      = Phase::Idle; // qué toca en el tick actual
 
-  // Generación de tick (se incrementa por cada paso completo)
+  // Tick global (se incrementa al completar PE+Bus)
   std::size_t tick_      = 0;
 
-  // Contadores para completitud de fases
-  std::size_t pe_done_count_ = 0; // nº de PEs que ya procesaron el tick actual
+  // Contadores de completitud por fase
+  std::size_t pe_done_count_ = 0; // PEs que ya hicieron su step en este tick
   bool        bus_done_      = false;
 
-  // Último tick procesado por cada hilo (para no repetir/correr dos veces)
+  // Último tick que procesó cada hilo (para no repetir)
   std::array<std::size_t, cfg::kNumPEs> pe_last_tick_{};
   std::size_t bus_last_tick_ = 0;
 
   bool threads_started_ = false;
 
-  // Lanzado/parada de hilos y avance de 1 tick (bloqueante)
+  // Lanzar/terminar hilos y avanzar un tick (bloqueante)
   void start_threads();
   void stop_threads();
   void advance_one_tick_blocking();
 
-  // Cuerpos de los hilos
+  // Cuerpos de hilo
   void worker_pe(std::size_t pe_idx);
   void worker_bus();
 };

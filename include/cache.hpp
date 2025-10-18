@@ -14,80 +14,68 @@ namespace sim {
 
 class Bus;
 
-/**
- * @brief Caché set-asociativa con coherencia MESI.
- *
- * Políticas resumidas:
- * - LOAD miss: BusRd, trae línea completa. Estado final: E (o S si otro la tiene).
- * - STORE hit:
- *     - Si S/E: se pide BusUpgr (upgrade de permisos) y pasa a M.
- *     - Si M: se escribe localmente.
- *   Es *write-through* (se escribe DRAM en cada store) y mantenemos la línea limpia (dirty=false).
- * - STORE miss: write-allocate + BusRdX, escribimos y la línea queda en M (limpia).
- *
- * El bus modela contabilidad de bytes (size) y flushes por intervención.
- */
+// Caché set-asociativa con MESI, en corto:
+// - LOAD miss  -> BusRd, trae línea. Queda E (o S si otro la tiene).
+// - STORE hit  -> si S/E pide BusUpgr y pasa a M; si ya está M, escribe local.
+// - STORE miss -> write-allocate + BusRdX, queda en M.
+// Nota: simulamos write-through (se escribe a DRAM en cada store) y la línea se
+// mantiene limpia (dirty=false). El bus acumula bytes y “flushes” por intervención.
 class Cache {
 public:
   Cache(PEId owner, Bus& bus, Memory& mem);
 
-  // Accesos locales (desde PE)
-  bool load(Addr addr, std::size_t size, Word& out);   // devuelve hit/miss
-  bool store(Addr addr, std::size_t size, Word value); // idem
+  // Accesos del PE (true = hit)
+  bool load(Addr addr, std::size_t size, Word& out);
+  bool store(Addr addr, std::size_t size, Word value);
 
-  // Reacciones a snoop (invocado por Bus)
-  // Retorna true si actuó (invalida/compartió/proveyó datos)
+  // Snoop desde el bus (true si invalidó/compartió/proveyó datos)
   bool snoop(const BusRequest& req, std::optional<Word>& data_out);
 
-  // Consultas
+  // Métricas
   const Metrics& metrics() const { return metrics_; }
   void clear_metrics() { metrics_.reset(); }
 
-  // Identificador del propietario (PE) para que el bus pueda evitar self-snoop
+  // Identificador del PE (para evitar self-snoop)
   PEId owner() const { return pe_; }
 
-  /**
-   * @brief Dump legible del contenido de la caché (para stepping/debug).
-   * @param os              flujo de salida
-   * @param highlight_addr  dirección a resaltar (opcional); si pertenece a una línea, se marca con '*'
-   * @param dump_data       si true, también vuelca los 64b de cada palabra en la línea
-   */
+  // Dump rápido para debug (puede resaltar una dirección y volcar datos)
   void debug_dump(std::ostream& os,
                   std::optional<Addr> highlight_addr = std::nullopt,
                   bool dump_data = false) const;
 
 private:
   struct Set {
-    std::vector<CacheLine> ways; // size = cfg::kCacheWays
+    std::vector<CacheLine> ways; // cfg::kCacheWays
   };
 
-  // --- Orden IMPORTA: primero dependencias y parámetros, luego 'sets_' ---
+  // Orden importa
   PEId      pe_;
   Bus&      bus_;
   Memory&   mem_;
   Metrics   metrics_;
 
-  // Parámetros de la caché (deben inicializarse ANTES de construir 'sets_')
+  // Parámetros (antes de armar sets_)
   std::size_t      line_bytes_ = cfg::kLineBytes;
   std::size_t      num_lines_  = cfg::kCacheLines;
   std::size_t      num_sets_   = cfg::kCacheLines / cfg::kCacheWays;
 
-  // Estructura de datos (se inicializa en el constructor, ya con params listos)
+  // Datos
   std::vector<Set> sets_;
 
-  // Helpers de mapeo
+  // Mapeo: devuelve (índice, tag)
   std::pair<std::size_t, std::uint64_t> index_tag(Addr addr) const;
   static inline Addr line_base(Addr addr) { return (addr / cfg::kLineBytes) * cfg::kLineBytes; }
   static inline std::size_t line_offset(Addr addr) { return static_cast<std::size_t>(addr % cfg::kLineBytes); }
 
+  // Búsqueda y reemplazo
   int  find_way(std::size_t set_idx, std::uint64_t tag) const;
   int  select_victim(std::size_t set_idx) const; // FIFO simple
 
-  // Operaciones internas (respetan offset/tamaño dentro de la línea)
+  // Operaciones internas (respetan offset/tamaño)
   bool read_hit (std::size_t set_idx, int way, Addr addr, std::size_t size, Word& out);
   bool write_hit(std::size_t set_idx, int way, Addr addr, std::size_t size, Word value);
 
-  // Miss handling (write-allocate, write-through)
+  // Miss handling
   bool handle_load_miss (Addr addr, std::size_t size, Word& out);
   bool handle_store_miss(Addr addr, std::size_t size, Word value);
 };

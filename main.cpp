@@ -30,7 +30,7 @@ int main(int argc, char **argv)
     // Precarga datos para N múltiplo de 4 (ej. N=16)
     mesi.init_dot_problem(/*N=*/16, /*baseA=*/0x000, /*baseB=*/0x100, /*basePS=*/0x200);
 
-    std::cerr << "[Main] Cargando ASM desde: " << filePath << "\n";
+    SERR << "[Main] Cargando ASM desde: " << filePath << "\n";
     mesi.load_program_all_from_file(filePath);
 
     if (stepping) mesi.run_stepping();

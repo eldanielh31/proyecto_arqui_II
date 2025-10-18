@@ -8,6 +8,10 @@
 
 namespace sim {
 
+// Bus compartido estilo MESI, versión simple:
+// - push_request(): encola la transacción (asigna tid si falta)
+// - step(): procesa hasta kBusOpsPerCycle (FIFO) y hace broadcast a las cachés
+// - Métricas: bytes totales, conteo por comando y flushes
 Bus::Bus(std::vector<Cache*>& caches) : caches_(caches) {}
 
 void Bus::set_caches(const std::vector<Cache*>& caches) {
@@ -17,7 +21,7 @@ void Bus::set_caches(const std::vector<Cache*>& caches) {
 
 void Bus::push_request(const BusRequest& req_in) {
   BusRequest req = req_in;
-  if (req.tid == 0) req.tid = next_tid_++;
+  if (req.tid == 0) req.tid = next_tid_++; // tid simple si no vino asignado
 
   {
     std::scoped_lock lk(mtx_);
@@ -31,6 +35,7 @@ void Bus::push_request(const BusRequest& req_in) {
         << " size=" << req.size);
 }
 
+// Difunde al resto de cachés (snoop) y actualiza métricas del bus
 void Bus::broadcast(const BusRequest& req) {
   Addr line_base = (req.addr / cfg::kLineBytes) * cfg::kLineBytes;
   LOG_IF(cfg::kLogBus, "[BUS] proc T#" << req.tid
@@ -38,34 +43,34 @@ void Bus::broadcast(const BusRequest& req) {
         << " " << cmd_str(req.cmd)
         << " line=0x" << std::hex << line_base << std::dec);
 
-  // Contar comando
+  // Contador por comando
   cmd_counts_[static_cast<std::size_t>(req.cmd)]++;
 
-  // Recorremos cachés (snoop). Si alguna devuelve datos (Flush), lo registramos.
+  // Snoop en todas las cachés (menos el originador). Si alguien devuelve datos => Flush
   std::optional<Word> data_from_peer;
   std::vector<int> acted_pes;
 
   for (auto* c : caches_) {
     if (!c) continue;
-    if (c->owner() == req.source) continue; // evitar self-snoop
+    if (c->owner() == req.source) continue; // no self-snoop
 
     std::optional<Word> local;
     bool acted = c->snoop(req, local);
     if (acted) acted_pes.push_back(static_cast<int>(c->owner()));
     if (acted && local.has_value()) {
-      data_from_peer = local; // hubo intervención (Flush)
+      data_from_peer = local; // intervención con datos (Flush)
     }
   }
 
-  // Contabilización de tráfico en el bus:
+  // Tráfico del bus: si hubo Flush contamos línea completa, si no el size pedido
   if (data_from_peer.has_value()) {
-    bus_bytes_ += cfg::kLineBytes; // asumimos transferencia de una línea completa
+    bus_bytes_ += cfg::kLineBytes;
     flushes_++;
   } else {
-    bus_bytes_ += req.size;        // tamaño reportado por la petición
+    bus_bytes_ += req.size;
   }
 
-  // Resumen de snoops
+  // Mini resumen de quién actuó
   std::ostringstream oss;
   if (acted_pes.empty()) {
     oss << "none";

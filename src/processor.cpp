@@ -8,10 +8,13 @@
 #include <iostream>
 #include <iomanip>
 
-// Se implementan funciones para tipos de lectura de programas y la logica del ISA
 namespace sim
 {
 
+  // CPU del PE: puede ejecutar por ISA o por traza.
+  // - load_*: carga programa/traza
+  // - step(): avanza 1 instrucción/acceso
+  // - mem_*64: accesos de 64 bits vía caché
   Processor::Processor(PEId id, Cache &cache) : id_(id), cache_(cache) {}
 
   void Processor::load_trace(const std::vector<Access> &trace)
@@ -54,6 +57,7 @@ namespace sim
     return reg_[idx];
   }
 
+  // Casts rápidos u64 <-> f64
   double Processor::as_double(std::uint64_t v)
   {
     double d;
@@ -68,7 +72,7 @@ namespace sim
     return v;
   }
 
-  // ===== Accesos a memoria de 64 bits vía caché =====
+  // ===== Accesos a memoria (64 bits) vía caché =====
   std::uint64_t Processor::mem_load64(std::uint64_t addr)
   {
     Word out = 0;
@@ -81,20 +85,18 @@ namespace sim
     (void)cache_.store(static_cast<Addr>(addr), sizeof(Word), static_cast<Word>(val));
   }
 
-  // Logica de ejecucion set de instrucciones
+  // ===== Ejecución ISA (una instrucción) =====
   void Processor::exec_one()
   {
     if (pc_ >= prog_.code.size())
       return;
     const Instr &ins = prog_.code[pc_];
 
-    auto next = [&]
-    { pc_++; };
+    auto next = [&]{ pc_++; };
 
     switch (ins.op)
     {
-    case OpCode::LOAD:
-    {
+    case OpCode::LOAD: {
       // LOAD Rd, [Rs]
       auto dst = ins.rd;
       auto src = ins.ra;
@@ -106,8 +108,7 @@ namespace sim
       next();
       break;
     }
-    case OpCode::STORE:
-    {
+    case OpCode::STORE: {
       // STORE Rs, [Rd]
       auto src = ins.ra;
       auto dst = ins.rd;
@@ -118,8 +119,7 @@ namespace sim
       next();
       break;
     }
-    case OpCode::FMUL:
-    {
+    case OpCode::FMUL: {
       double a = as_double(reg_[ins.ra]);
       double b = as_double(reg_[ins.rb]);
       reg_[ins.rd] = from_double(a * b);
@@ -127,8 +127,7 @@ namespace sim
       next();
       break;
     }
-    case OpCode::FADD:
-    {
+    case OpCode::FADD: {
       double a = as_double(reg_[ins.ra]);
       double b = as_double(reg_[ins.rb]);
       reg_[ins.rd] = from_double(a + b);
@@ -136,15 +135,12 @@ namespace sim
       next();
       break;
     }
-
-    case OpCode::REDUCE:
-    {
-      // REDUCE Rd, Ra, Rb  (sumatoria de memoria: sum_{i=0..count-1} [base + i*8])
+    case OpCode::REDUCE: {
+      // sumatoria en memoria: sum_{i=0..count-1} [base + i*8]
       std::uint64_t base = reg_[ins.ra];
       std::uint64_t count = reg_[ins.rb];
       double sum = 0.0;
-      for (std::uint64_t i = 0; i < count; ++i)
-      {
+      for (std::uint64_t i = 0; i < count; ++i) {
         Word v = mem_load64(base + i * cfg::kWordBytes);
         sum += as_double(v);
       }
@@ -156,61 +152,48 @@ namespace sim
       next();
       break;
     }
-
-    case OpCode::INC:
-    {
-      reg_[ins.rd] += cfg::kWordBytes; // mover puntero 8 bytes
+    case OpCode::INC: {
+      reg_[ins.rd] += cfg::kWordBytes; // puntero +8
       LOG_IF(cfg::kLogPE, "[PE" << id_ << "] INC R" << ins.rd << " (+" << cfg::kWordBytes << ")");
       next();
       break;
     }
-    case OpCode::DEC:
-    {
+    case OpCode::DEC: {
       reg_[ins.rd] -= 1;
       LOG_IF(cfg::kLogPE, "[PE" << id_ << "] DEC R" << ins.rd);
       next();
       break;
     }
-    case OpCode::MOVI:
-    {
+    case OpCode::MOVI: {
       reg_[ins.rd] = ins.imm;
       LOG_IF(cfg::kLogPE, "[PE" << id_ << "] MOVI R" << ins.rd << ", " << ins.imm);
       next();
       break;
     }
-    case OpCode::JNZ:
-    {
-      // Usa REG0 como contador implícito
+    case OpCode::JNZ: {
+      // REG0 = contador implícito
       const auto &L = labels_map();
       auto it = L.find(ins.label);
       if (it == L.end())
         throw std::runtime_error("Label no encontrado: " + ins.label);
-      if (reg_[0] != 0)
-      {
+      if (reg_[0] != 0) {
         pc_ = static_cast<std::size_t>(it->second);
-      }
-      else
-      {
+      } else {
         next();
       }
       break;
     }
     }
-
   }
 
   void Processor::step()
   {
-    if (mode_ == ExecMode::ISA)
-    {
+    if (mode_ == ExecMode::ISA) {
       exec_one();
-    }
-    else
-    {
-      // modo trace - si aplica
-      if (pc_trace_ < trace_.size())
-      {
-        // ejecutar acceso...
+    } else {
+      // Traza (placeholder simple)
+      if (pc_trace_ < trace_.size()) {
+        // aquí iría la simulación de un acceso
         pc_trace_++;
       }
     }
@@ -218,11 +201,10 @@ namespace sim
 
   bool Processor::is_done() const
   {
-    if (mode_ == ExecMode::ISA)
-    {
+    if (mode_ == ExecMode::ISA) {
       return pc_ >= prog_.code.size();
     }
-    return true;
+    return true; // modo traza: por ahora asumimos fin
   }
 
   const std::unordered_map<std::string, int> &Processor::labels_map()

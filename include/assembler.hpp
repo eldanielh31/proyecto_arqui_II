@@ -3,9 +3,11 @@
 #include <string>
 #include <unordered_map>
 
-namespace sim {
-
-// Ensamblador mínimo con labels (formato por línea):
+//
+// Ensamblador mini del simulador.
+// Toma texto (string o archivo) y lo convierte en un Program.
+//
+// Sintaxis por línea (simple y sin vueltas):
 //   LABEL:
 //   LOAD  REGd, [REGs]
 //   STORE REGs, [REGd]
@@ -13,22 +15,38 @@ namespace sim {
 //   FADD  REGd, REGa, REGb
 //   INC   REGx
 //   DEC   REGx
-//   MOVI  REGx, IMM64    ; inmediato en decimal o 0xHEX
-//   JNZ   LABEL          ; usa REG0 como contador implícito
+//   MOVI  REGx, IMM64    // inmediato decimal o 0xHEX
+//   JNZ   LABEL          // usa REG0 como contador implícito
+//
+// Notas rápidas:
+// - Registros válidos: REG0..REG7
+// - Los comentarios empiezan con ';'
+// - Los separadores son comas y espacios opcionales
+// - Si hay un error de parseo, se lanza std::runtime_error
+//
+
+namespace sim {
 
 class Assembler {
 public:
-  // Lanza std::runtime_error si hay error de parseo.
+  // Ensambla directamente desde una cadena completa.
   static Program assemble_from_string(const std::string& src);
+
+  // Lee el archivo y ensambla su contenido.
   static Program assemble_from_file(const std::string& path);
 
 private:
-  static int         parse_reg(const std::string& token); // REG0..REG7
+  // Convierte "REG0".."REG7" a su índice 0..7.
+  static int         parse_reg(const std::string& token);
+
+  // Quita espacios al inicio y al final.
   static std::string trim(const std::string& s);
+
+  // ¿s empieza con p?
   static bool        starts_with(const std::string& s, const std::string& p);
 };
 
-// Acceso al mapa global de labels generado por el ensamblador
+// Acceso a la tabla global de labels del último ensamblado (nombre -> índice).
 std::unordered_map<std::string,int>& get_labels_singleton();
 
 } // namespace sim
