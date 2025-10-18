@@ -1,53 +1,69 @@
 #pragma once
-#include "config.hpp"
-#include "processor.hpp"
-#include "cache.hpp"
-#include "bus.hpp"
-#include "memory.hpp"
-#include "isa.hpp"
-#include <memory>
+/**
+ * Simulator: orquesta Bus, Memoria, Caches y PEs.
+ * 
+ * Cambios relevantes:
+ * - Stepping interactivo:
+ *     - run_stepping(): bucle que lee comandos desde stdin.
+ *       ENTER=step, c=continuar, r=regs, b=bus, q=salir
+ *     - step_one(): ejecuta 1 paso (cada PE 1 instrucción si puede) + 1 avance de bus,
+ *                   imprime: BEFORE/AFTER de registros por PE (con diffs) y dump de caché.
+ *     - all_done(): true si todos los PEs finalizaron.
+ *     - dump_cache()/dump_regs(): utilidades para debug.
+ * 
+ * Nota importante (unique_ptr con tipos incompletos):
+ *   Adelantamos (forward-declare) Bus/Cache/Processor y guardamos unique_ptr a ellas.
+ *   Para evitar el error de “incomplete type” con unique_ptr, declaramos ~Simulator()
+ *   aquí y lo definimos en el .cpp, donde las clases ya están completamente definidas.
+ */
+
 #include <array>
+#include <memory>
+#include <optional>
+#include <cstddef>
 #include <string>
 
+#include "config.hpp"
+#include "types.hpp"
+#include "memory.hpp"   // 'mem_' necesita tipo completo
+
 namespace sim {
+
+class Cache;
+class Bus;
+class Processor;
+struct Program;
 
 class Simulator {
 public:
   Simulator();
+  ~Simulator();  // Definición en el .cpp
 
-  // Carga un conjunto de trazas simples (demo original)
+  // ---- Inicialización / carga de programas
+  void init_dot_problem(std::size_t N, Addr baseA, Addr baseB, Addr basePS);
   void load_demo_traces();
+  void load_program_all(const Program &p);
+  void load_program_all_from_file(const std::string &path);
 
-  // Carga un programa .asm y lo asigna a todos los PEs
-  void load_program_all_from_file(const std::string& path);
-
-  // Alternativa: cargar el mismo Program ya ensamblado
-  void load_program_all(const Program& p);
-
-  // Avanza N ciclos (compatibilidad)
+  // ---- Ejecución "normal"
   void run_cycles(std::size_t cycles);
+  void run_until_done(std::size_t safety_max = 100000);
 
-  // Corre hasta que TODOS los PEs terminen (con tope de seguridad)
-  void run_until_done(std::size_t safety_max = 1000000);
+  // ---- Stepping interactivo
+  // ENTER: step | c: continuar | r: regs | b: bus | q: salir
+  void run_stepping();
+  void step_one();          // 1 paso: PEs (<=1 instr), bus (1 step), BEFORE/AFTER + dump de caches
+  bool all_done() const;    // ¿todos los PEs finalizaron?
 
-  // Inicializa el problema de producto punto (double):
-  // - Carga A[], B[] en DRAM (N elementos cada uno)
-  // - Inicializa partial_sums[PE] = 0.0
-  // - Setea registros por PE:
-  //     REG0 = N/kNumPEs   (contador de iteraciones para JNZ)
-  //     REG1 = base del segmento A de este PE
-  //     REG2 = base del segmento B de este PE
-  //     REG3 = dirección de partial_sums[PE]
-  void init_dot_problem(std::size_t N,
-                        Addr baseA = 0x000,
-                        Addr baseB = 0x100,
-                        Addr basePS = 0x200);
+  // ---- Utilidades de dump
+  void dump_cache(std::size_t pe, std::optional<std::size_t> only_set = std::nullopt) const;
+  void dump_regs(std::size_t pe) const;
 
 private:
-  Memory mem_;
-  std::array<std::unique_ptr<Cache>, cfg::kNumPEs> caches_;
   std::unique_ptr<Bus> bus_;
+  std::array<std::unique_ptr<Cache>,     cfg::kNumPEs> caches_;
   std::array<std::unique_ptr<Processor>, cfg::kNumPEs> pes_;
+  Memory mem_;
 };
 
 } // namespace sim
