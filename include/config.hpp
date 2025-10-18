@@ -1,6 +1,12 @@
 #pragma once
 #include <cstddef>
 #include <iostream> // para logs
+#include <syncstream> // C++20
+
+// Usar estas “streams” sincronizadas en lugar de std::cout/std::cerr.
+#define SOUT  std::osyncstream(std::cout)
+#define SERR  std::osyncstream(std::cerr)
+
 
 namespace cfg
 {
