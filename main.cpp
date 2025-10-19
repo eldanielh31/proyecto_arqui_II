@@ -2,25 +2,47 @@
 #include <iostream>
 #include <string>
 
+/**
+ * Modo normal vs. modo stepping:
+ *   - Normal: run_until_done() o demo por defecto
+ *   - Stepping: --step | -s para activar; ENTER=step, c=continuar, r=regs, b=bus, q=salir
+ */
 int main(int argc, char **argv)
 {
   sim::Simulator mesi;
-  if (argc > 1)
-  {
-    std::string filePath = argv[1];
 
-    // Precarga datos para N múltiplo de 4 (e.g., N=16)
+  bool stepping = false;
+  std::string filePath;
+
+  // Parse simple de argumentos:
+  //   --step/-s activa stepping; el primer no-flag es el path del asm
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--step" || a == "-s") {
+      stepping = true;
+    } else {
+      filePath = a;
+    }
+  }
+
+  if (!filePath.empty())
+  {
+    // Precarga datos para N múltiplo de 4 (ej. N=16)
     mesi.init_dot_problem(/*N=*/16, /*baseA=*/0x000, /*baseB=*/0x100, /*basePS=*/0x200);
 
-    std::cerr << "[Main] Cargando ASM desde: " << filePath << "\n";
+    SERR << "[Main] Cargando ASM desde: " << filePath << "\n";
     mesi.load_program_all_from_file(filePath);
-    mesi.run_until_done(); // <-- ahora se detiene automáticamente
+
+    if (stepping) mesi.run_stepping();
+    else          mesi.run_until_done();
   }
   else
   {
-    // Demo para procesador
+    // Demo por defecto
     mesi.load_demo_traces();
-    mesi.run_until_done();
+
+    if (stepping) mesi.run_stepping();
+    else          mesi.run_until_done();
   }
   return 0;
 }

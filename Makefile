@@ -9,7 +9,7 @@ OBJ_DIR  := build
 SRCS := $(wildcard $(SRC_DIR)/*.cpp) main.cpp
 OBJS := $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 
-.PHONY: all run clean debug runasm
+.PHONY: all run clean debug runasm step
 
 all: $(APP)
 
@@ -27,6 +27,10 @@ run: all
 # Alias explícito por si se prefiere un target dedicado
 runasm: all
 	@./$(APP) examples/demo.asm
+
+# Modo stepping interactivo (ENTER avanza, c continúa, r/b/q comandos)
+step: all
+	@./$(APP) --step $(if $(ARGS),$(ARGS),examples/demo.asm)
 
 debug: CXXFLAGS += -g -O0
 debug: clean all
