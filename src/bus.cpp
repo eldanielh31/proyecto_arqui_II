@@ -8,10 +8,6 @@
 
 namespace sim {
 
-// Bus compartido estilo MESI, versión simple:
-// - push_request(): encola la transacción (asigna tid si falta)
-// - step(): procesa hasta kBusOpsPerCycle (FIFO) y hace broadcast a las cachés
-// - Métricas: bytes totales, conteo por comando y flushes
 Bus::Bus(std::vector<Cache*>& caches) : caches_(caches) {}
 
 void Bus::set_caches(const std::vector<Cache*>& caches) {
@@ -21,7 +17,7 @@ void Bus::set_caches(const std::vector<Cache*>& caches) {
 
 void Bus::push_request(const BusRequest& req_in) {
   BusRequest req = req_in;
-  if (req.tid == 0) req.tid = next_tid_++; // tid simple si no vino asignado
+  if (req.tid == 0) req.tid = next_tid_++;
 
   {
     std::scoped_lock lk(mtx_);
@@ -35,7 +31,6 @@ void Bus::push_request(const BusRequest& req_in) {
         << " size=" << req.size);
 }
 
-// Difunde al resto de cachés (snoop) y actualiza métricas del bus
 void Bus::broadcast(const BusRequest& req) {
   Addr line_base = (req.addr / cfg::kLineBytes) * cfg::kLineBytes;
   LOG_IF(cfg::kLogBus, "[BUS] proc T#" << req.tid
@@ -43,34 +38,61 @@ void Bus::broadcast(const BusRequest& req) {
         << " " << cmd_str(req.cmd)
         << " line=0x" << std::hex << line_base << std::dec);
 
-  // Contador por comando
+  // Contar comando
   cmd_counts_[static_cast<std::size_t>(req.cmd)]++;
 
-  // Snoop en todas las cachés (menos el originador). Si alguien devuelve datos => Flush
+  // Recorremos cachés (snoop). Si alguna devuelve datos (Flush), lo registramos.
   std::optional<Word> data_from_peer;
   std::vector<int> acted_pes;
+  int provider_id = -1; // PE que proveyó datos (Flush), si aplica
 
   for (auto* c : caches_) {
     if (!c) continue;
-    if (c->owner() == req.source) continue; // no self-snoop
+    if (c->owner() == req.source) continue; // evitar self-snoop
 
     std::optional<Word> local;
     bool acted = c->snoop(req, local);
     if (acted) acted_pes.push_back(static_cast<int>(c->owner()));
-    if (acted && local.has_value()) {
-      data_from_peer = local; // intervención con datos (Flush)
+    if (local.has_value() && provider_id < 0) {
+      data_from_peer = local; 
+      provider_id = static_cast<int>(c->owner());
     }
   }
 
-  // Tráfico del bus: si hubo Flush contamos línea completa, si no el size pedido
+  // Contabilización de tráfico en el bus:
+  std::uint64_t add_bytes = 0;
   if (data_from_peer.has_value()) {
-    bus_bytes_ += cfg::kLineBytes;
+    // Intervención: transferencia de una línea completa
+    add_bytes = cfg::kLineBytes;
+    bus_bytes_ += add_bytes;
     flushes_++;
   } else {
-    bus_bytes_ += req.size;
+    // Tráfico reportado por la petición (p.e. Upgr sin datos)
+    add_bytes = req.size;
+    bus_bytes_ += add_bytes;
   }
 
-  // Mini resumen de quién actuó
+  // --- NUEVO: Acreditar tráfico por-PE ---
+  // 1) Al emisor de la transacción
+  for (auto* c : caches_) {
+    if (!c) continue;
+    if (c->owner() == req.source) {
+      c->account_bus_bytes(add_bytes); // el requester pagó/recibió este tráfico
+      break;
+    }
+  }
+  // 2) Al proveedor del Flush (si hubo)
+  if (provider_id >= 0) {
+    for (auto* c : caches_) {
+      if (!c) continue;
+      if (static_cast<int>(c->owner()) == provider_id) {
+        c->account_bus_bytes(cfg::kLineBytes); // el que flushea también participa
+        break;
+      }
+    }
+  }
+
+  // Resumen de snoops
   std::ostringstream oss;
   if (acted_pes.empty()) {
     oss << "none";
@@ -83,7 +105,7 @@ void Bus::broadcast(const BusRequest& req) {
 
   LOG_IF(cfg::kLogBus, "[BUS] T#" << req.tid
         << " snoops:" << (acted_pes.empty() ? " none" : (" " + oss.str()))
-        << " | bytes+=" << req.size
+        << " | bytes+=" << add_bytes
         << " | total=" << bus_bytes_
         << " | flushes=" << flushes_);
 }
