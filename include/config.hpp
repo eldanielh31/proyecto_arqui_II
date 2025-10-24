@@ -1,32 +1,47 @@
 #pragma once
 #include <cstddef>
-#include <iostream>  // para logs
+#include <iostream> // logs
+#include <syncstream>
 
-namespace cfg {
-// Arquitectura base del proyecto
-inline constexpr std::size_t kNumPEs        = 4;
+namespace cfg
+{
+    // Stdout/stderr sincronizados para logs en paralelo
+    #define SOUT  std::osyncstream(std::cout)
+    #define SERR  std::osyncstream(std::cerr)
 
-// Memoria principal: 512 posiciones de 64 bits (double)
-inline constexpr std::size_t kMemWords      = 512;
+    // --- Topología básica ---
+    inline constexpr std::size_t kNumPEs = 4;     // 4 PEs
+    inline constexpr std::size_t kMemWords = 512; // 512 palabras de 64 bits
 
-// Caché privada por PE: 2-way set associative, 16 bloques totales, línea de 32 bytes
-inline constexpr std::size_t kCacheWays     = 2;
-inline constexpr std::size_t kCacheLines    = 16;
-inline constexpr std::size_t kLineBytes     = 32;
+    // --- Caché privada por PE: 2-way, 16 líneas totales, línea de 32B ---
+    inline constexpr std::size_t kCacheWays  = 2;
+    inline constexpr std::size_t kCacheLines = 16;
+    inline constexpr std::size_t kLineBytes  = 32;
 
-// Tamaño de palabra de datos (double, 8 bytes)
-inline constexpr std::size_t kWordBytes     = 8;
+    // Tamaño de palabra (double = 8B)
+    inline constexpr std::size_t kWordBytes = 8;
 
-// Parámetros de simulación
-inline constexpr bool kCycleDriven          = true;
+    // Modo de simulación
+    inline constexpr bool kCycleDriven = true;
 
-// ====== Flags de LOG (actívalos/desactívalos según necesites) ======
-inline constexpr bool kLogSim    = true;   // logs del simulador/ciclos
-inline constexpr bool kLogPE     = true;   // logs de cada PE (accesos)
-inline constexpr bool kLogCache  = true;   // logs de caché (hits/misses/wb)
-inline constexpr bool kLogSnoop  = true;   // logs de snoops/invalidaciones
-inline constexpr bool kLogBus    = true;   // logs del bus (cola/broadcast)
+    // --- Flags de log rápidos ---
+    inline constexpr bool kLogSim   = true; // ciclos del simulador
+    inline constexpr bool kLogPE    = true; // accesos de cada PE
+    inline constexpr bool kLogCache = true; // hits/misses/writeback
+    inline constexpr bool kLogSnoop = true; // snoops/invalidaciones
+    inline constexpr bool kLogBus   = true; // cola/broadcast del bus
 
-// Macro simple de logging condicional
-#define LOG_IF(flag, msg) do { if (flag) { std::cerr << msg << std::endl; } } while (0)
+    inline constexpr bool kDemoContention = true; // fuerza contención para ver coherencia
+
+    // --- Trabajo del bus por ciclo ---
+    // 1 operación por ciclo para ver claramente Upgr/Rd/Flush en orden.
+    inline constexpr std::size_t kBusOpsPerCycle = 1; // (antes: 2)
+
+    // Macro simple de logging condicional
+    #define LOG_IF(flag, msg)        \
+        do {                         \
+            if (flag) {              \
+                SERR << msg << '\n'; \
+            }                        \
+        } while (0)
 } // namespace cfg
